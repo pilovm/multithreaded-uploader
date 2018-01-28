@@ -1,5 +1,5 @@
 const uploader = function () {
-    function init() {
+    function Uploader() {
         this.chunkSize = 1024 * 1024;
         this.threadsQuantity = 2;
 
@@ -10,12 +10,12 @@ const uploader = function () {
         this.activeConnections = {};
     }
 
-    function setOptions(options = {}) {
+    Uploader.prototype.setOptions = function(options = {}) {
         this.chunkSize = options.chunkSize;
         this.threadsQuantity = options.threadsQuantity;
     }
 
-    function setupFile(file) {
+    Uploader.prototype.setupFile = function(file) {
         if (!file) {
             return;
         }
@@ -23,7 +23,7 @@ const uploader = function () {
         this.file = file;
     }
 
-    function start() {
+    Uploader.prototype.start = function() {
         if (!this.file) {
             throw new Error("Can't start uploading: file have not chosen");
         }
@@ -44,23 +44,23 @@ const uploader = function () {
                 const response = JSON.parse(xhr.responseText);
 
                 if (!response.fileId || response.status !== 200) {
-                    end(new Error("Can't create file id"));
+                    this.complete(new Error("Can't create file id"));
                     return;
                 }
 
                 this.fileId = response.fileId;
-                sendNext();
+                this.sendNext();
             }
         };
 
         xhr.onerror = (error) => {
-            end(error);
+            this.complete(error);
         };
 
         xhr.send();
     }
 
-    function sendNext() {
+    Uploader.prototype.sendNext = function() {
         const activeConnections = Object.keys(this.activeConnections).length;
 
         if (activeConnections >= this.threadsQuantity) {
@@ -69,7 +69,7 @@ const uploader = function () {
 
         if (!this.chunksQueue.length) {
             if (!activeConnections) {
-                end(null);
+                this.complete(null);
             }
 
             return;
@@ -79,20 +79,20 @@ const uploader = function () {
         const sentSize = chunkId * this.chunkSize;
         const chunk = this.file.slice(sentSize, sentSize + this.chunkSize);
 
-        sendChunk(chunk, chunkId)
+        this.sendChunk(chunk, chunkId)
             .then(() => {
-                sendNext();
+                this.sendNext();
             })
             .catch((error) => {
                 this.chunksQueue.push(chunkId);
 
-                end(error);
+                this.complete(error);
             });
 
-        sendNext();
+        this.sendNext();
     }
 
-    function end(error) {
+    Uploader.prototype.complete = function(error) {
         if (error && !this.aborted) {
             this.end(error);
             return;
@@ -103,10 +103,10 @@ const uploader = function () {
         this.end(error);
     }
 
-    function sendChunk(chunk, id) {
+    Uploader.prototype.sendChunk = function(chunk, id) {
         return new Promise(async (resolve, reject) => {
             try {
-                const response = await upload(chunk, id);
+                const response = await this.upload(chunk, id);
                 const {status, size} = JSON.parse(response);
 
                 if (status !== 200 || size !== chunk.size) {
@@ -122,7 +122,7 @@ const uploader = function () {
         })
     }
 
-    function onProgress(chunkId, event) {
+    Uploader.prototype.handleProgress = function(chunkId, event) {
         if (event.type === "progress" || event.type === "error" || event.type === "abort") {
             this.progressCache[chunkId] = event.loaded;
         }
@@ -142,10 +142,10 @@ const uploader = function () {
         })
     }
 
-    function upload(file, id) {
+    Uploader.prototype.upload = function(file, id) {
         return new Promise((resolve, reject) => {
             const xhr = this.activeConnections[id] = new XMLHttpRequest();
-            const progressListener = onProgress.bind(this, id);
+            const progressListener = this.handleProgress.bind(this, id);
 
             xhr.upload.addEventListener("progress", progressListener);
 
@@ -181,7 +181,7 @@ const uploader = function () {
         })
     }
 
-    function on(method, callback) {
+    Uploader.prototype.on = function(method, callback) {
         if (typeof callback !== "function") {
             callback = () => {};
         }
@@ -189,7 +189,7 @@ const uploader = function () {
         this[method] = callback;
     }
 
-    function abort() {
+    Uploader.prototype.abort = function() {
         Object.keys(this.activeConnections).forEach((id) => {
             this.activeConnections[id].abort();
         });
@@ -197,35 +197,35 @@ const uploader = function () {
         this.aborted = true;
     }
 
-    init();
+    const multithreadedUploader = new Uploader();
 
     return {
         options: function (options) {
-            setOptions(options);
+            multithreadedUploader.setOptions(options);
 
             return this;
         },
         send: function (file) {
-            setupFile(file);
+            multithreadedUploader.setupFile(file);
 
             return this;
         },
         continue: function () {
-            sendNext();
+            multithreadedUploader.sendNext();
         },
         onProgress: function (callback) {
-            on("onProgress", callback);
+            multithreadedUploader.on("onProgress", callback);
 
             return this;
         },
         end: function (callback) {
-            on("end", callback);
-            start();
+            multithreadedUploader.on("end", callback);
+            multithreadedUploader.start();
 
             return this;
         },
         abort: function () {
-            abort();
+            multithreadedUploader.abort();
         }
     }
 };
