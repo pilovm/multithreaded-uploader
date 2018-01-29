@@ -1,7 +1,7 @@
 # Multithreaded uploader
 This project have developed to show you how to create multithreaded file uploading in javascript.
 
-More information about multithreaded uploading you can find in my article [here](https://www.google.com).
+More information about multithreaded uploading you can find in my article [here](https://medium.com/@pilovm/multithreaded-file-uploading-with-javascript-dafabce34ccd).
 ## How to test it
 You have to clone the repository and start the server
 ```
